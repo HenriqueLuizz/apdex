@@ -1,0 +1,18 @@
+[postgresql]
+host=localhost
+database=database_name
+user=postgres
+password=passwd_db
+
+[References]
+Modules=ModuleA,ModuleB
+
+[ModuleA]
+Process=Documentos de entrada
+RecordTime=5
+ToleratingTime=20
+
+[ModuleB]
+Process=Documentos de saida
+RecordTime=5
+ToleratingTime=20
