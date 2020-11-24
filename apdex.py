@@ -10,11 +10,8 @@ from configparser import ConfigParser
 def config(filename='apdex.ini', section='postgresql'):
 
     if os.path.isfile(filename):
-        # create a parser
         parser = ConfigParser()
-        # read config file
         parser.read(filename)
-
         # get section, default to postgresql
         result = {}
         if parser.has_section(section):
@@ -23,10 +20,10 @@ def config(filename='apdex.ini', section='postgresql'):
                 result[param[0]] = param[1]
         else:
             raise Exception('Section {0} not found in the {1} file'.format(section, filename))
-
         return result
     else:
-        print(f'File {filename} not found!')
+        createIni(filename)
+        raise Exception(f'File {filename} not found!\nSample file created.')
 
 
 def calc_apdex(data):
@@ -45,14 +42,14 @@ def calc_apdex(data):
     for r in references['modules'].split(','):
         ref[r] = config(section=r)
         matrix[ref[r]['process']] = {'recordtime': ref[r]['recordtime'], 'toleratingtime': ref[r]['toleratingtime'], 'result': []}
-    
+
     # Laço que percorre todas linhas do resultado do banco de dados
     for row in data:
         # =[@HoraFim]-[@HoraIni]
         tempo = str(datetime.datetime.strptime(row[5], '%H:%M:%S') - datetime.datetime.strptime(row[3], '%H:%M:%S'))
         # =HoraAbsIni-HoraAbsFim
         tempoTotal = row[6] - row[4]
-        
+
         if row[2].strip() in matrix:
             # =SE(TempoTotal<PROCV(Process;TableTimes[#Dados];3;FALSO);1;0)
             satisfied = tempoTotal < float(matrix[row[2].strip()]['recordtime'])
@@ -60,7 +57,7 @@ def calc_apdex(data):
             tolerating = False if satisfied else tempoTotal <= float(matrix[row[2].strip()]['toleratingtime'])
             # =SE(TempoTotal>PROCV(Process;TableTimes[#Dados];6;FALSO);1;0)
             untolerating = tempoTotal > float(matrix[row[2].strip()]['toleratingtime'])
-            
+
             rrow = {'tempo': tempo, 'tempoTotal':tempoTotal, 'satisfied':satisfied, 'tolerating':tolerating, 'untolerating':untolerating}
             matrix[row[2].strip()]['result'].append(rrow)
 
@@ -90,10 +87,10 @@ def calc_apdex(data):
             matrix[ref[r]['process']]['sumSatisfied'] = sumSatisfied
             matrix[ref[r]['process']]['sumTolerating'] = sumTolerating
             matrix[ref[r]['process']]['sumUntolerating'] = sumUntolerating
-            # =(INFODADOSTABELADINÂMICA("Soma de Satisfied";$M$12) + INFODADOSTABELADINÂMICA("Soma de Tolerating";$M$12)/2) / 
-            # ( INFODADOSTABELADINÂMICA("Soma de Satisfied";$M$12) + INFODADOSTABELADINÂMICA("Soma de Tolerating";$M$12) + INFODADOSTABELADINÂMICA("Soma de Untolerating";$M$12) )
+            # =(("Soma de Satisfied") + ("Soma de Tolerating")/2) / 
+            # (("Soma de Satisfied") + ("Soma de Tolerating") + ("Soma de Untolerating"))
             matrix[ref[r]['process']]['apdex'] = (sumSatisfied + sumTolerating / 2) / (sumSatisfied + sumTolerating + sumUntolerating)
-            
+
             count_sumSatisfied = count_sumSatisfied + matrix[ref[r]['process']]['sumSatisfied']
             count_sumTolerating = count_sumTolerating + matrix[ref[r]['process']]['sumTolerating']
             count_sumUntolerating = count_sumUntolerating + matrix[ref[r]['process']]['sumUntolerating']
@@ -109,7 +106,7 @@ def calc_apdex(data):
 def run_calc(query=None, execution=''):
     """ Connect to the PostgreSQL database server """
     conn = None
-    
+
     if query is None:
         query = 'SELECT version()'
 
@@ -140,14 +137,12 @@ def run_calc(query=None, execution=''):
 
         saveData(x, execution)
 
-        
-
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
     finally:
         if conn is not None:
             conn.close()
-            print('Database connection closed.')
+            # print('Database connection closed.')
 
 
 def saveData(data, execution='00000'):
@@ -156,17 +151,35 @@ def saveData(data, execution='00000'):
     datehour = datehour.strftime('%Y%m%d_%H-%M-%S')
     valueApdex = data["apdex"]
 
-    if os.path.isfile(f'apdex.log'):
-        print('....')
-    
     with open(f'{datehour}_apdex_exec_{execution}.json', 'a') as outfile:
         json.dump(data, outfile, indent = 4)
 
     with open("apdex.log", "a") as outfile:
         outfile.write(f'{datehour} {execution} {valueApdex}\n')
 
-    
 
+def createIni(filename):
+    model = '''[postgresql]
+host=localhost
+database=database_name
+user=postgres
+password=passwd_db
+
+[References]
+Modules=ModuleA,ModuleB
+
+[ModuleA]
+Process=Nome do Modulo A
+RecordTime=5
+ToleratingTime=20
+
+[ModuleB]
+Process=Nome do Modulo B
+RecordTime=5
+ToleratingTime=20
+'''
+    with open(filename, "a") as apdexfile:
+        apdexfile.write(model)
 
 
 @click.group()
@@ -174,12 +187,11 @@ def apdex():
     pass
 
 
-@apdex.command('get', short_help='Coleta os dados para gerar o apdex, \n\n--exec <Numero da Execução>', help="Executa o select para coletar os dados do teste de benchmark\n\n apedx get --exec 000001", epilog='', deprecated=False)
+@apdex.command('get', short_help='Coleta os dados para gerar o apdex, \n\n--execution <Numero da Execução> \napedx get -e 000001', help="Executa o select para coletar os dados do teste de benchmark\n\n apedx get -e 000001", epilog='', deprecated=False)
 @click.option('--execution','-e', multiple=True, help='Numero da execução')
 def get(execution):
     if len(execution) > 0:
         for e in execution:
-            print(e)
             query = 'SELECT EXECID, SLAVE, PROCNAME, STARTHOUR, STARTSEC, FINISHHOUR, FINISHSEC FROM \
                 BMKHISTORY WHERE EXECID = \'' + e + '\' AND STARTDATE <> \'\' ORDER BY NTOTALTIME DESC'
             run_calc(query, execution=e)
