@@ -5,6 +5,21 @@ import click
 import datetime
 import psycopg2
 from configparser import ConfigParser
+import cx_Oracle
+
+
+def oracle_conn():
+    conf = config(section='oracle')
+    source = conf["host"]
+    source = f'{source}/'+conf["database"]
+    
+    cnxn = cx_Oracle.connect(
+    user=conf["user"],
+    password=conf["password"],
+    dsn=source)
+    print("Successfully connected to Oracle Database")
+
+    return cnxn
 
 
 def config(filename='apdex.ini', section='postgresql'):
@@ -42,14 +57,13 @@ def calc_apdex(data):
     for r in references['modules'].split(','):
         ref[r] = config(section=r)
         matrix[ref[r]['process']] = {'recordtime': ref[r]['recordtime'], 'toleratingtime': ref[r]['toleratingtime'], 'result': []}
-
     # Laço que percorre todas linhas do resultado do banco de dados
     for row in data:
         # =[@HoraFim]-[@HoraIni]
         tempo = str(datetime.datetime.strptime(row[5], '%H:%M:%S') - datetime.datetime.strptime(row[3], '%H:%M:%S'))
         # =HoraAbsIni-HoraAbsFim
         tempoTotal = row[6] - row[4]
-
+        
         if row[2].strip() in matrix:
             # =SE(TempoTotal<PROCV(Process;TableTimes[#Dados];3;FALSO);1;0)
             satisfied = tempoTotal < float(matrix[row[2].strip()]['recordtime'])
@@ -60,7 +74,6 @@ def calc_apdex(data):
 
             rrow = {'tempo': tempo, 'tempoTotal':tempoTotal, 'satisfied':satisfied, 'tolerating':tolerating, 'untolerating':untolerating}
             matrix[row[2].strip()]['result'].append(rrow)
-
     for r in references['modules'].split(','):
         ref[r] = config(section=r)
         matrix[ref[r]['process']]['rowTotal'] = len(matrix[ref[r]['process']]['result'])
@@ -144,6 +157,48 @@ def run_calc(query=None, execution=''):
             conn.close()
             # print('Database connection closed.')
 
+def run_oracle(query=None, execution=''):
+    """ Connect to the ORACLE database server """
+    conn = None
+    res = []
+
+    if query is None:
+        query = 'SELECT * FROM V$VERSION'
+
+    try:
+        # Le parametros de conexao
+        params = config(filename='apdex.ini', section='oracle')
+        dbName = params['database']
+        # Conecta no banco de dados ORACLE
+        print(f'Connecting to {dbName} database...')
+        conn = oracle_conn()
+        cur = conn.cursor()
+        for result in cur.execute(query): # Executa a query
+            # Guarda o resultado da query
+            res.append(result)
+
+        # Grava o resulta no arquivo .csv com o nome do numero da execução informada
+        with open(f'apdex_exec_{execution}.csv', 'w', newline='') as csvfile:
+            spamwriter = csv.writer(csvfile, delimiter=',', quotechar=',', quoting=csv.QUOTE_MINIMAL)
+            for r in res:
+                spamwriter.writerow(r)
+        # Fecha a conexão com o PostgreSQL
+        cur.close()
+        # Calcula APDEX
+        x = calc_apdex(res)
+        print('Resultado do Calculo:')
+        print(f'EXECUÇÃO - {execution} \nAPDEX : {x["apdex"]}')
+
+        saveData(x, execution)
+
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if conn is not None:
+            conn.close()
+            # print('Database connection closed.')
+
+
 
 def saveData(data, execution='00000'):
 
@@ -159,7 +214,7 @@ def saveData(data, execution='00000'):
 
 
 def createIni(filename):
-    model = '''[postgresql]
+    model = '''[postgresql|oracle]
 host=localhost
 database=database_name
 user=postgres
@@ -195,6 +250,16 @@ def get(execution):
             query = 'SELECT EXECID, SLAVE, PROCNAME, STARTHOUR, STARTSEC, FINISHHOUR, FINISHSEC FROM \
                 BMKHISTORY WHERE EXECID = \'' + e + '\' AND STARTDATE <> \'\' ORDER BY NTOTALTIME DESC'
             run_calc(query, execution=e)
+
+@apdex.command('oracle', short_help='Coleta os dados prar gerar o apdex a partir do ORACLE')
+@click.option('--execution','-e', multiple=True, help='Numero de Execuções')
+
+def oracle(execution):
+    if len(execution) > 0:
+        for e in execution:
+            query = 'SELECT EXECID, SLAVE, PROCNAME, STARTHOUR, STARTSEC, FINISHHOUR, FINISHSEC FROM \
+                BMKHISTORY WHERE EXECID = \'' + e + '\' AND STARTDATE <> \' \' ORDER BY NTOTALTIME DESC'
+            run_oracle(query, execution=e)
 
 apdex.add_command(get)
 
