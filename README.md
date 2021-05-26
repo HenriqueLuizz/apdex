@@ -41,7 +41,7 @@ Linux e Mac
 
 ```ini
 ;exemplo do apdex.ini
-[postgresql]
+[postgresql|mssql|oracle]
 host=localhost
 database=nome_da_base
 user=postgres
@@ -66,13 +66,13 @@ ToleratingTime=20
 |SGBD           | Suportado |
 |---------------|-----------|
 | PostgreSQL    |     ✔️     |
-| MSSQL Server  |     ✖️     |
-| Oracle        |     ✖️     |
+| MSSQL Server  |     ✔️     |
+| Oracle        |     ✔️     |
 
 ✔️ - Suportado
 ✖️ - Em desenvolvimento
 
-### PostgreSQL
+### PostgreSQL MSSQL ORACLE
 
 ❗️ Instrução de consulta ao banco de dados
 

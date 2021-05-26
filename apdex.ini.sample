@@ -1,3 +1,15 @@
+[mssql]
+host=localhost
+database=database_name
+user=postgres
+password=passwd_db
+
+[oracle]
+host=localhost
+database=database_name
+user=postgres
+password=passwd_db
+
 [postgresql]
 host=localhost
 database=database_name
