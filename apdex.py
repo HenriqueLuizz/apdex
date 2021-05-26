@@ -38,7 +38,7 @@ def mssql_conn():
     username = conf['user']
     password = conf['password']
 
-    if check_odbc_driver('SQLServer Native Client 11.0'):
+    if check_odbc_driver('SQL Server Native Client 11.0'):
         cnxn = pyodbc.connect('DRIVER={SQL Server Native Client 11.0}; SERVER='+server+';\
             DATABASE='+database+';UID='+username+';PWD='+password)
         return cnxn
