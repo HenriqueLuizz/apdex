@@ -237,7 +237,7 @@ def run_oracle(query=None, execution=''):
         # Calcula APDEX
         print_apdex(res,execution)
 
-    except (Exception, psycopg2.DatabaseError) as error:
+    except (Exception) as error:
         print(error)
     finally:
         if conn is not None:
